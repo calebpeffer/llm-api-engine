@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { classNames } from '@/utils';
 import { CronScheduler } from '@/components/CronScheduler';
-import FirecrawlApp from "@mendable/firecrawl-js";
 import { z } from "zod";
 
 // Types
@@ -49,11 +48,6 @@ interface ScrapeResult {
 
 // Constants
 const EXAMPLE_QUERY = "Extract company details from websites";
-
-// Initialize Firecrawl
-const firecrawl = new FirecrawlApp({
-  apiKey: process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY || ""
-});
 
 // Utility functions
 const getApiUrl = (path: string) => {
@@ -322,64 +316,44 @@ export default function Home() {
 
     try {
       const selectedUrls = searchResults.filter(r => r.selected).map(r => r.url);
-      const schemaRequest = JSON.parse(schemaStr) as JsonSchema;
-      
-      console.log('OpenAI Generated Schema:', schemaRequest);
+      const schemaRequest = JSON.parse(schemaStr);
 
-      // Convert JSON Schema to Zod schema
-      const convertJsonSchemaToZod = (schema: JsonSchema) => {
-        if (!schema.properties) {
-          throw new Error('Invalid schema: missing properties');
-        }
-
-        const zodSchema: Record<string, z.ZodType> = {};
-        Object.entries(schema.properties).forEach(([key, value]) => {
-          if (typeof value === 'object' && value !== null) {
-            const propType = value.type;
-            zodSchema[key] = propType === 'string' ? z.string() :
-                            propType === 'boolean' ? z.boolean() :
-                            propType === 'number' ? z.number() :
-                            propType === 'integer' ? z.number().int() :
-                            z.any();
-            
-            if (value.description) {
-              zodSchema[key] = zodSchema[key].describe(value.description);
-            }
-          }
-        });
-
-        return z.object(zodSchema);
-      };
-
-      const zodSchema = convertJsonSchemaToZod(schemaRequest);
-      console.log('Converted Zod Schema:', zodSchema);
-
-      const scrapeResult: ScrapeResult = await firecrawl.extract(selectedUrls, {
-        prompt: query,
-        schema: zodSchema
-      });
-
-      console.log('Scrape Result:', scrapeResult);
-
-      if (!scrapeResult.success) {
-        let errorMessage: string;
-        const err: unknown = scrapeResult.error;
-        
-        if (err && typeof err === 'object' && 'message' in err) {
-          errorMessage = (err as { message: string }).message;
-        } else if (err && typeof err === 'object') {
-          try {
-            errorMessage = JSON.stringify(err);
-          } catch {
-            errorMessage = 'Unknown error occurred';
-          }
-        } else {
-          errorMessage = String(err);
-        }
-        throw new Error(errorMessage);
+      // Validate schema format
+      if (!schemaRequest.type || !schemaRequest.properties) {
+        throw new Error('Invalid schema format. Schema must include "type" and "properties".');
       }
 
-      setExtractedData(scrapeResult.data);
+      // Ensure schema is in correct format
+      const formattedSchema = {
+        type: 'object',
+        properties: schemaRequest.properties,
+        required: schemaRequest.required || Object.keys(schemaRequest.properties)
+      };
+
+      // Call our secure API endpoint
+      const response = await fetch('/api/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          urls: selectedUrls,
+          prompt: query,
+          schema: formattedSchema
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to extract data');
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to extract data');
+      }
+
+      setExtractedData(result.data);
       setStep('extract');
       setCurrentStep(5);
     } catch (error) {

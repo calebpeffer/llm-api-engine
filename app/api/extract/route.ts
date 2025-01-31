@@ -1,69 +1,68 @@
 import { NextResponse } from 'next/server';
 import FirecrawlApp from "@mendable/firecrawl-js";
-import { z } from 'zod';
-import crypto from 'crypto';
-import { Redis } from '@upstash/redis';
 
-const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
-
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL || '',
-  token: process.env.UPSTASH_REDIS_REST_TOKEN || '',
+// Initialize Firecrawl with server-side API key
+const firecrawl = new FirecrawlApp({
+  apiKey: process.env.FIRECRAWL_API_KEY || ""
 });
 
-const app = new FirecrawlApp({
-  apiKey: FIRECRAWL_API_KEY || ''
-});
+// Validate JSON Schema format
+function isValidJsonSchema(schema: any): boolean {
+  return (
+    typeof schema === 'object' &&
+    schema !== null &&
+    schema.type === 'object' &&
+    typeof schema.properties === 'object' &&
+    Object.keys(schema.properties).length > 0
+  );
+}
 
-// Define request schema
-const extractRequestSchema = z.object({
-  urls: z.array(z.string()).min(1),
-  query: z.string(),
-  schema: z.object({}).passthrough()
-});
-
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
-    const { urls, query, schema } = extractRequestSchema.parse(body);
+    const body = await request.json();
+    const { urls, prompt, schema } = body;
 
-    console.log('Extracting mock data for:', { urls, query, schema });
+    // Debug logging
+    console.log('Received schema:', JSON.stringify(schema, null, 2));
 
-    // Generate mock data based on schema
-    const mockData = urls.map(url => {
-      // Create mock data that matches common financial data points
-      const data = {
-        stockPrice: "$699.42",
-        marketCap: "1.73T",
-        volume: "23.4M",
-        peRatio: "34.5",
-        dayRange: "$695.20 - $705.30",
-        yearRange: "$580.00 - $720.50",
-        dividend: "0.32%",
-        eps: "20.15",
-        source: url,
-        lastUpdated: new Date().toISOString()
-      };
+    // Validate inputs
+    if (!urls || !Array.isArray(urls) || !prompt || !schema) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid request parameters' 
+      }, { status: 400 });
+    }
 
-      return {
-        url,
-        data,
-        metadata: {
-          extractedAt: new Date().toISOString(),
-          confidence: 0.95
-        }
-      };
+    // Validate schema format
+    if (!isValidJsonSchema(schema)) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid JSON schema format. Schema must be an object with "type" and "properties".' 
+      }, { status: 400 });
+    }
+
+    // Ensure schema matches expected format
+    const formattedSchema = {
+      type: 'object',
+      properties: schema.properties,
+      required: schema.required || Object.keys(schema.properties)
+    };
+
+    // Call Firecrawl API with the formatted schema
+    const result = await firecrawl.extract(urls, {
+      prompt,
+      schema: formattedSchema
     });
 
-    return NextResponse.json({
-      success: true,
-      data: mockData
+    return NextResponse.json({ 
+      success: true, 
+      data: result.data 
     });
   } catch (error) {
-    console.error('Error:', error);
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to process request'
-    }, { status: 400 });
+    console.error('Extraction error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Failed to extract data' 
+    }, { status: 500 });
   }
 }
