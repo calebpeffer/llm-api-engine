@@ -54,6 +54,10 @@ export async function POST(request: Request) {
       schema: formattedSchema
     });
 
+    if ('error' in result) {
+      throw new Error(result.error);
+    }
+
     return NextResponse.json({ 
       success: true, 
       data: result.data 
