@@ -91,6 +91,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [firecrawlApiKey, setFirecrawlApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
 
   // Transition state
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -331,7 +332,15 @@ export default function Home() {
         required: schemaRequest.required || Object.keys(schemaRequest.properties)
       };
 
-      // Call our secure API endpoint
+      // Log the request for debugging
+      console.log('Sending extraction request:', {
+        urls: selectedUrls,
+        prompt: query,
+        schema: formattedSchema,
+        hasApiKey: !!firecrawlApiKey
+      });
+
+      // Call our secure API endpoint with firecrawlApiKey
       const response = await fetch('/api/extract', {
         method: 'POST',
         headers: {
@@ -340,32 +349,54 @@ export default function Home() {
         body: JSON.stringify({
           urls: selectedUrls,
           prompt: query,
-          schema: formattedSchema
+          schema: formattedSchema,
+          firecrawlApiKey
         }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to extract data');
-      }
-
       const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to extract data');
+
+      // Log the full response for debugging
+      console.log('Full API response:', result);
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to extract data';
+        
+        // Try to get detailed error information
+        if (result.error) {
+          errorMessage = result.error;
+        }
+        
+        // If we have additional details, add them
+        if (result.details) {
+          console.error('Error details:', result.details);
+          if (typeof result.details === 'object') {
+            errorMessage += '\n\nDetails: ' + JSON.stringify(result.details, null, 2);
+          } else {
+            errorMessage += '\n\nDetails: ' + String(result.details);
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
 
-      setExtractedData(result.data);
-      setStep('extract');
-      setCurrentStep(5);
+      // Check if we have data in the response
+      if (result.success && result.data) {
+        setExtractedData(result.data);
+        setStep('extract');
+        setCurrentStep(5);
+      } else {
+        throw new Error('No data returned from extraction');
+      }
     } catch (error) {
-      console.error('Full error:', error);
+      console.error('Full extraction error:', error);
       let errorMessage: string;
       
       if (error && typeof error === 'object' && 'message' in error) {
         errorMessage = (error as { message: string }).message;
       } else if (error && typeof error === 'object') {
         try {
-          errorMessage = JSON.stringify(error);
+          errorMessage = JSON.stringify(error, null, 2);
         } catch {
           errorMessage = 'Unknown error occurred';
         }
@@ -855,23 +886,6 @@ export default function Home() {
               >
                 <div className="relative">
                   <input
-                    value={firecrawlApiKey}
-                    onChange={(e) => setFirecrawlApiKey(e.target.value)}
-                    type="password"
-                    placeholder="Enter your Firecrawl API key"
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all"
-                  />
-                  <a
-                    href="https://firecrawl.dev"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500 hover:text-emerald-400 text-sm"
-                  >
-                    Get API Key
-                  </a>
-                </div>
-                <div className="relative">
-                  <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => {
@@ -1254,6 +1268,49 @@ export default function Home() {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Persistent API Key Input */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col space-y-2">
+        <div className="bg-white/5 backdrop-blur-sm rounded-lg p-4 border border-white/10 shadow-lg">
+          <div className="flex items-center space-x-2">
+            <div className="relative flex-1">
+              <input
+                type={showApiKey ? "text" : "password"}
+                value={firecrawlApiKey}
+                onChange={(e) => setFirecrawlApiKey(e.target.value)}
+                placeholder="Firecrawl API Key"
+                className="w-full pr-20 pl-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-2">
+                <button
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="p-1 text-white/60 hover:text-white"
+                  title={showApiKey ? "Hide API Key" : "Show API Key"}
+                >
+                  {showApiKey ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  )}
+                </button>
+                <a
+                  href="https://firecrawl.dev"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-500 hover:text-emerald-400 text-sm"
+                >
+                  Get Key
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Settings Button */}
