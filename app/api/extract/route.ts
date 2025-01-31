@@ -1,11 +1,6 @@
 import { NextResponse } from 'next/server';
 import FirecrawlApp from "@mendable/firecrawl-js";
 
-// Initialize Firecrawl with server-side API key
-const firecrawl = new FirecrawlApp({
-  apiKey: process.env.FIRECRAWL_API_KEY || ""
-});
-
 // Validate JSON Schema format
 function isValidJsonSchema(schema: any): boolean {
   return (
@@ -20,18 +15,23 @@ function isValidJsonSchema(schema: any): boolean {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { urls, prompt, schema } = body;
+    const { urls, prompt, schema, firecrawlApiKey } = body;
 
     // Debug logging
     console.log('Received schema:', JSON.stringify(schema, null, 2));
 
     // Validate inputs
-    if (!urls || !Array.isArray(urls) || !prompt || !schema) {
+    if (!urls || !Array.isArray(urls) || !prompt || !schema || !firecrawlApiKey) {
       return NextResponse.json({ 
         success: false, 
         error: 'Invalid request parameters' 
       }, { status: 400 });
     }
+
+    // Initialize Firecrawl with provided API key
+    const firecrawl = new FirecrawlApp({
+      apiKey: firecrawlApiKey
+    });
 
     // Validate schema format
     if (!isValidJsonSchema(schema)) {

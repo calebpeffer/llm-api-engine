@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Validate API key is present
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error('OPENAI_API_KEY is not defined in environment variables');
+}
+
+// Initialize OpenAI client
+const openai = new OpenAI();  // It will automatically use OPENAI_API_KEY from env
 
 export async function POST(req: Request) {
   try {

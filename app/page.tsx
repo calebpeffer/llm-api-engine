@@ -90,6 +90,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [firecrawlApiKey, setFirecrawlApiKey] = useState('');
 
   // Transition state
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -276,19 +277,19 @@ export default function Home() {
 
   // Handle step submissions
   const handleQuerySubmit = async () => {
-    if (!query || loading) return;
+    if (!query || loading || !firecrawlApiKey) return;
 
     setLoading(true);
     setStep('schema');
     setCurrentStep(3);
 
-    // Call API to generate schema
+    // Call API to generate schema with API key
     fetch('/api/generate-schema', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, firecrawlApiKey }),
     })
       .then(res => res.json())
       .then(data => {
@@ -850,14 +851,31 @@ export default function Home() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.6 }}
-                className="w-full"
+                className="w-full space-y-4"
               >
+                <div className="relative">
+                  <input
+                    value={firecrawlApiKey}
+                    onChange={(e) => setFirecrawlApiKey(e.target.value)}
+                    type="password"
+                    placeholder="Enter your Firecrawl API key"
+                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all"
+                  />
+                  <a
+                    href="https://firecrawl.dev"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500 hover:text-emerald-400 text-sm"
+                  >
+                    Get API Key
+                  </a>
+                </div>
                 <div className="relative">
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && query && !loading) {
+                      if (e.key === 'Enter' && query && !loading && firecrawlApiKey) {
                         handleQuerySubmit();
                       }
                     }}
@@ -866,7 +884,7 @@ export default function Home() {
                   />
                   <button
                     onClick={handleQuerySubmit}
-                    disabled={!query || loading}
+                    disabled={!query || !firecrawlApiKey || loading}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-emerald-500 hover:bg-emerald-600 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {loading ? (
