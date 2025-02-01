@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { classNames } from '@/utils';
-import { CronScheduler } from '@/components/CronScheduler';
+// import { CronScheduler } from '@/components/CronScheduler';  // Temporarily disabled
 import { z } from "zod";
 import { toast } from 'react-hot-toast';
 import { ClipboardIcon } from '@heroicons/react/24/outline';
@@ -120,10 +120,10 @@ export default function Home() {
   const [apiKey, setApiKey] = useState('');
   const [isDeployed, setIsDeployed] = useState(false);
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
   const [routes, setRoutes] = useState<Route[]>([]);
-  const [cronSchedule, setCronSchedule] = useState('0 5 * * *');
+  // const [showSettings, setShowSettings] = useState(false);  // Temporarily disabled
+  // const [cronSchedule, setCronSchedule] = useState('0 5 * * *');  // Temporarily disabled
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -922,7 +922,7 @@ export default function Home() {
                       </svg>
                     ) : (
                       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                       </svg>
                     )}
                   </button>
@@ -1382,55 +1382,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Settings Button */}
-      <button
-        onClick={() => setShowSettings(true)}
-        className="fixed bottom-6 right-6 p-3 bg-white/5 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-all z-50"
-      >
-        <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      </button>
-
-      {/* Settings Panel */}
-      {showSettings && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
-          <div className="bg-gray-900 p-8 rounded-lg w-full max-w-4xl relative">
-            <button
-              onClick={() => setShowSettings(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
-            >
-              <XMarkIcon className="w-6 h-6" />
-            </button>
-            <h2 className="text-xl font-bold text-white mb-4">Settings</h2>
-            <div className="space-y-6">
-              <div className="pt-4 border-t border-white/10">
-                <CronScheduler
-                  initialValue={cronSchedule}
-                  onScheduleChange={async (schedule) => {
-                    setCronSchedule(schedule);
-                    try {
-                      const response = await fetch('/api/update-cron', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          schedule,
-                          path: `/api/results/${routeInput}`
-                        })
-                      });
-                      if (!response.ok) throw new Error('Failed to update cron schedule');
-                    } catch (error) {
-                      console.error('Error updating cron schedule:', error);
-                      setError('Failed to update cron schedule');
-                    }
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       {step === 'deploy' && (
         <div className="flex justify-between items-center pt-6 mt-6 border-t border-white/10">
         </div>
