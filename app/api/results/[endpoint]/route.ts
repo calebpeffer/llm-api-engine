@@ -1,27 +1,24 @@
 import { NextResponse } from 'next/server';
 import { Redis } from '@upstash/redis';
+import { validateApiKey, createErrorResponse } from '@/app/lib/auth';
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL || '',
   token: process.env.UPSTASH_REDIS_REST_TOKEN || '',
 });
 
+const MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
 export async function GET(req: Request, { params }: { params: { endpoint: string } }) {
   try {
-    // Check Redis connection
-    if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-      console.error('Redis environment variables not set');
-      return NextResponse.json({
-        success: false,
-        error: 'Redis configuration is missing'
-      }, { status: 500 });
+    if (!params?.endpoint) {
+      return createErrorResponse('Endpoint parameter is required', 400);
     }
 
-    if (!params?.endpoint) {
-      return NextResponse.json({
-        success: false,
-        error: 'Endpoint parameter is required'
-      }, { status: 400 });
+    // Validate API key and check rate limit
+    const authResult = await validateApiKey(params.endpoint);
+    if (!authResult.isAuthenticated) {
+      return createErrorResponse(authResult.error || 'Authentication failed', authResult.statusCode || 401);
     }
 
     const endpoint = `api/results/${params.endpoint}`;
@@ -33,47 +30,47 @@ export async function GET(req: Request, { params }: { params: { endpoint: string
 
     // Get cached results
     const results = await redis.get(endpoint);
-    console.log('Raw Redis results:', results);
-    
     if (!results) {
-      return NextResponse.json({
-        success: false,
-        error: 'No results found for this endpoint'
-      }, { status: 404 });
+      return createErrorResponse('No results found for this endpoint', 404);
     }
 
     // Parse the stored results
     let storedData;
     try {
       storedData = typeof results === 'string' ? JSON.parse(results) : results;
-      console.log('Parsed stored data:', storedData);
     } catch (parseError) {
       console.error('Failed to parse stored data:', parseError);
-      return NextResponse.json({
-        success: false,
-        error: 'Invalid data format in storage'
-      }, { status: 500 });
+      return createErrorResponse('Invalid data format in storage', 500);
     }
-    
+
+    // Check data freshness
+    const lastUpdated = new Date(storedData.metadata?.lastUpdated).getTime();
+    const age = Date.now() - lastUpdated;
+    const isFresh = age < MAX_AGE;
+
     // Return different response based on schema parameter
-    if (includeSchema) {
-      return NextResponse.json({
-        success: true,
-        data: storedData
-      });
-    } else {
-      return NextResponse.json({
-        success: true,
-        data: storedData.data,
-        lastUpdated: storedData.metadata?.lastUpdated,
-        sources: storedData.metadata?.sources
-      });
+    const response: any = {
+      success: true,
+      data: includeSchema ? storedData : storedData.data,
+      lastUpdated: storedData.metadata?.lastUpdated,
+      sources: storedData.metadata?.sources,
+      isFresh,
+      age: Math.round(age / 1000) // age in seconds
+    };
+
+    // Add warning if data is stale
+    if (!isFresh) {
+      response.warning = 'Data is older than 24 hours';
     }
+
+    // Add update status if available
+    if (storedData.metadata?.updateStatus) {
+      response.updateStatus = storedData.metadata.updateStatus;
+    }
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error('Error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch results' },
-      { status: 500 }
-    );
+    return createErrorResponse('Failed to fetch results', 500);
   }
 }
