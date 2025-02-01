@@ -6,6 +6,9 @@ import { CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { classNames } from '@/utils';
 import { CronScheduler } from '@/components/CronScheduler';
 import { z } from "zod";
+import { toast } from 'react-hot-toast';
+import { ClipboardIcon } from '@heroicons/react/24/outline';
+import { v4 as uuidv4 } from 'uuid';
 
 // Types
 interface Route {
@@ -114,7 +117,7 @@ export default function Home() {
   const [routeInput, setRouteInput] = useState('');
   const [deployedRoute, setDeployedRoute] = useState('');
   const [isRouteAvailable, setIsRouteAvailable] = useState(true);
-  const [apiKey] = useState('sk_' + Math.random().toString(36).substr(2, 10));
+  const [apiKey, setApiKey] = useState('');
   const [isDeployed, setIsDeployed] = useState(false);
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -707,27 +710,32 @@ export default function Home() {
     setTransitionMessage('Deploying your API...');
 
     try {
-      // Clean the route string
+      // Clean the route string and prefix with UUID
       const cleanRoute = routeInput
         .toLowerCase()
-        .replace(/[^a-z0-9-_\s]/g, '') // Remove special chars except spaces, hyphens, underscores
-        .replace(/\s+/g, '-') // Convert spaces to hyphens
-        .replace(/-+/g, '-') // Convert multiple hyphens to single hyphen
+        .replace(/[^a-z0-9-_]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
         .trim();
+      
+      // Generate UUID prefix for the route
+      const uniquePrefix = uuidv4().split('-')[0]; // Use first segment of UUID for brevity
+      const uniqueRoute = `${uniquePrefix}-${cleanRoute}`;
 
-      // Format the request body according to the API schema
+      // Format the request body according to our backend API schema
       const requestBody = {
-        key: cleanRoute,
+        key: 'test-scheduler',
         data: {
-          data: extractedData,
+          data: {},
           metadata: {
             query: query,
             schema: JSON.parse(schemaStr),
             sources: searchResults.filter(r => r.selected).map(r => r.url),
-            lastUpdated: new Date().toISOString()
+            updateFrequency: '*/1 * * * *',
+            firecrawlApiKey: firecrawlApiKey
           }
         },
-        route: cleanRoute
+        route: uniqueRoute
       };
 
       const response = await fetch('/api/deploy', {
@@ -748,7 +756,9 @@ export default function Home() {
         throw new Error(data.error || 'Failed to deploy API');
       }
 
-      setDeployedRoute(`/api/results/${cleanRoute}`);
+      // Store the API key from the response
+      setApiKey(data.apiKey);
+      setDeployedRoute(`/api/results/${uniqueRoute}`);
       setIsDeployed(true);
       setStep('deploy');
       setCurrentStep(5);
@@ -1173,15 +1183,19 @@ export default function Home() {
                     <h3 className="text-lg font-medium text-white mb-4">Deploy Your API</h3>
 
                     <div className="space-y-6">
-                      <div>
-                      </div>
                       {!isDeployed ? (
                         <div className="space-y-6">
-                          <RouteInput
-                            value={routeInput}
-                            onChange={setRouteInput}
-                            warning={warning}
-                          />
+                          <div className="space-y-2">
+                            <label className="block text-sm text-white/60">
+                              Endpoint Name
+                            </label>
+                            <RouteInput
+                              value={routeInput}
+                              onChange={setRouteInput}
+                              warning={warning}
+                            />
+                          </div>
+
                           <div className="flex justify-between items-center pt-4">
                             <button
                               onClick={() => setStep('extract')}
@@ -1213,53 +1227,58 @@ export default function Home() {
                             <p className="text-sm text-white/60">Your API is ready! Here's your endpoint:</p>
                             <div className="p-4 bg-white/5 rounded-lg">
                               <div className="flex items-center justify-between">
-                                <code className="text-sm text-emerald-500">
-                                  {getApiUrl(deployedRoute)}
-                                </code>
-                                <div className="flex items-center space-x-2">
+                                <code className="text-sm text-emerald-500">{getApiUrl(deployedRoute)}</code>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(getApiUrl(deployedRoute));
+                                    toast.success('Endpoint URL copied to clipboard!');
+                                  }}
+                                  className="p-2 text-white/60 hover:text-white"
+                                >
+                                  <ClipboardIcon className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="mt-6 space-y-2">
+                              <p className="text-sm text-white/60">Here's your API key:</p>
+                              <div className="p-4 bg-white/5 rounded-lg">
+                                <div className="flex items-center justify-between">
+                                  <code className="text-sm text-emerald-500">{apiKey}</code>
                                   <button
-                                    onClick={() => window.open(getApiUrl(deployedRoute), '_blank')}
-                                    className="p-2 bg-white/5 hover:bg-white/10 rounded-md text-white/60"
-                                    title="Open in browser"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(apiKey);
+                                      toast.success('API key copied to clipboard!');
+                                    }}
+                                    className="p-2 text-white/60 hover:text-white"
                                   >
-                                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                      <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                    </svg>
-                                  </button>
-                                  <button
-                                    onClick={() => navigator.clipboard.writeText(getApiUrl(deployedRoute))}
-                                    className="p-2 bg-white/5 hover:bg-white/10 rounded-md text-white/60"
-                                    title="Copy to clipboard"
-                                  >
-                                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                      <path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                                    </svg>
+                                    <ClipboardIcon className="w-4 h-4" />
                                   </button>
                                 </div>
                               </div>
                             </div>
 
                             <div className="mt-6 space-y-2">
-                              <label className="block text-sm text-white/60">
-                                cURL Command
-                              </label>
-                              <div className="flex items-center space-x-2">
-                                <code className="flex-1 px-4 py-3 bg-white/5 rounded-lg text-white font-mono text-sm overflow-x-auto">
-                                  {`curl -X GET "${getApiUrl(deployedRoute)}" \\
+                              <p className="text-sm text-white/60">Test your API with this cURL command:</p>
+                              <div className="p-4 bg-white/5 rounded-lg">
+                                <div className="flex items-center justify-between">
+                                  <code className="text-sm text-emerald-500 whitespace-pre-wrap">
+                                    {`curl -X GET "${getApiUrl(deployedRoute)}" \\
   -H "Authorization: Bearer ${apiKey}" \\
   -H "Content-Type: application/json"`}
-                                </code>
-                                <button
-                                  onClick={() => navigator.clipboard.writeText(
-                                    `curl -X GET "${getApiUrl(deployedRoute)}" \\\n  -H "Authorization: Bearer ${apiKey}" \\\n  -H "Content-Type: application/json"`
-                                  )}
-                                  className="p-2 bg-white/5 hover:bg-white/10 rounded-md text-white/60"
-                                  title="Copy to clipboard"
-                                >
-                                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                                  </svg>
-                                </button>
+                                  </code>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(
+                                        `curl -X GET "${getApiUrl(deployedRoute)}" -H "Authorization: Bearer ${apiKey}" -H "Content-Type: application/json"`
+                                      );
+                                      toast.success('cURL command copied to clipboard!');
+                                    }}
+                                    className="p-2 text-white/60 hover:text-white"
+                                  >
+                                    <ClipboardIcon className="w-4 h-4" />
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1281,38 +1300,40 @@ export default function Home() {
           <div className="flex items-center space-x-2">
             <div className="relative flex-1">
               <div className="text-xs text-white/40 mb-1">Firecrawl API Key</div>
-              <input
-                type={showApiKeys.firecrawl ? "text" : "password"}
-                value={firecrawlApiKey}
-                onChange={(e) => setFirecrawlApiKey(e.target.value)}
-                placeholder="Enter Firecrawl key"
-                className="w-full pr-20 pl-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-              />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-2">
-                <button
-                  onClick={() => setShowApiKeys(prev => ({ ...prev, firecrawl: !prev.firecrawl }))}
-                  className="p-1 text-white/60 hover:text-white"
-                  title={showApiKeys.firecrawl ? "Hide API Key" : "Show API Key"}
-                >
-                  {showApiKeys.firecrawl ? (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
-                </button>
-                <a
-                  href="https://firecrawl.dev"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-emerald-500 hover:text-emerald-400 text-sm"
-                >
-                  Get Key
-                </a>
+              <div className="relative">
+                <input
+                  type={showApiKeys.firecrawl ? "text" : "password"}
+                  value={firecrawlApiKey}
+                  onChange={(e) => setFirecrawlApiKey(e.target.value)}
+                  placeholder="Enter Firecrawl key"
+                  className="w-full pr-24 pl-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                />
+                <div className="absolute inset-y-0 right-2 flex items-center space-x-2">
+                  <button
+                    onClick={() => setShowApiKeys(prev => ({ ...prev, firecrawl: !prev.firecrawl }))}
+                    className="p-1.5 text-white/60 hover:text-white rounded-md hover:bg-white/5"
+                    title={showApiKeys.firecrawl ? "Hide API Key" : "Show API Key"}
+                  >
+                    {showApiKeys.firecrawl ? (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                  <a
+                    href="https://firecrawl.dev"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-500 hover:text-emerald-400 text-sm"
+                  >
+                    Get Key
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -1321,38 +1342,40 @@ export default function Home() {
           <div className="flex items-center space-x-2">
             <div className="relative flex-1">
               <div className="text-xs text-white/40 mb-1">OpenAI API Key</div>
-              <input
-                type={showApiKeys.openai ? "text" : "password"}
-                value={openaiApiKey}
-                onChange={(e) => setOpenaiApiKey(e.target.value)}
-                placeholder="Enter OpenAI key"
-                className="w-full pr-20 pl-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-              />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-2">
-                <button
-                  onClick={() => setShowApiKeys(prev => ({ ...prev, openai: !prev.openai }))}
-                  className="p-1 text-white/60 hover:text-white"
-                  title={showApiKeys.openai ? "Hide API Key" : "Show API Key"}
-                >
-                  {showApiKeys.openai ? (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
-                </button>
-                <a
-                  href="https://platform.openai.com/api-keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-emerald-500 hover:text-emerald-400 text-sm"
-                >
-                  Get Key
-                </a>
+              <div className="relative">
+                <input
+                  type={showApiKeys.openai ? "text" : "password"}
+                  value={openaiApiKey}
+                  onChange={(e) => setOpenaiApiKey(e.target.value)}
+                  placeholder="Enter OpenAI key"
+                  className="w-full pr-24 pl-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                />
+                <div className="absolute inset-y-0 right-2 flex items-center space-x-2">
+                  <button
+                    onClick={() => setShowApiKeys(prev => ({ ...prev, openai: !prev.openai }))}
+                    className="p-1.5 text-white/60 hover:text-white rounded-md hover:bg-white/5"
+                    title={showApiKeys.openai ? "Hide API Key" : "Show API Key"}
+                  >
+                    {showApiKeys.openai ? (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                  <a
+                    href="https://platform.openai.com/api-keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-500 hover:text-emerald-400 text-sm"
+                  >
+                    Get Key
+                  </a>
+                </div>
               </div>
             </div>
           </div>
