@@ -8,6 +8,22 @@ const redis = new Redis({
 });
 
 const MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+const MAX_INIT_WAIT = 30000; // 30 seconds maximum wait for initialization
+
+async function waitForInitialization(endpoint: string): Promise<boolean> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < MAX_INIT_WAIT) {
+    const data = await redis.get(endpoint);
+    if (!data) return false;
+    
+    const parsed = JSON.parse(typeof data === 'string' ? data : '{}');
+    if (parsed.metadata?.updateStatus !== 'initializing') {
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms before checking again
+  }
+  return false;
+}
 
 export async function GET(req: Request, { params }: { params: { endpoint: string } }) {
   try {
@@ -43,6 +59,20 @@ export async function GET(req: Request, { params }: { params: { endpoint: string
       return createErrorResponse('Invalid data format in storage', 500);
     }
 
+    // If the endpoint is initializing, wait for it to complete
+    if (storedData.metadata?.updateStatus === 'initializing') {
+      const initialized = await waitForInitialization(endpoint);
+      if (initialized) {
+        // Refresh the data after initialization
+        const updatedResults = await redis.get(endpoint);
+        if (updatedResults) {
+          storedData = JSON.parse(typeof updatedResults === 'string' ? updatedResults : '{}');
+        }
+      } else {
+        return createErrorResponse('Endpoint initialization timed out', 504);
+      }
+    }
+
     // Check data freshness
     const lastUpdated = new Date(storedData.metadata?.lastUpdated).getTime();
     const age = Date.now() - lastUpdated;
@@ -55,7 +85,8 @@ export async function GET(req: Request, { params }: { params: { endpoint: string
       lastUpdated: storedData.metadata?.lastUpdated,
       sources: storedData.metadata?.sources,
       isFresh,
-      age: Math.round(age / 1000) // age in seconds
+      age: Math.round(age / 1000), // age in seconds
+      updateStatus: storedData.metadata?.updateStatus
     };
 
     // Add warning if data is stale
@@ -63,9 +94,9 @@ export async function GET(req: Request, { params }: { params: { endpoint: string
       response.warning = 'Data is older than 24 hours';
     }
 
-    // Add update status if available
-    if (storedData.metadata?.updateStatus) {
-      response.updateStatus = storedData.metadata.updateStatus;
+    // Add error if last update failed
+    if (storedData.metadata?.updateStatus === 'failed') {
+      response.error = storedData.metadata?.lastError;
     }
 
     return NextResponse.json(response);

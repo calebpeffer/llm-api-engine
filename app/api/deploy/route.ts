@@ -1,40 +1,15 @@
 import { NextResponse } from 'next/server';
 import { Redis } from '@upstash/redis';
 import { z } from 'zod';
-import crypto from 'crypto';
 import { generateApiKey } from '@/app/lib/auth';
+import { extractAndUpdateData } from '@/app/lib/extract';
+import { encrypt } from '@/app/lib/crypto';
+import { scheduleEndpoint } from '@/app/lib/scheduler';
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL || '',
   token: process.env.UPSTASH_REDIS_REST_TOKEN || '',
 });
-
-// Encryption helpers
-function getEncryptionKey(): Buffer {
-  const key = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
-  // Ensure key is exactly 32 bytes by hashing it
-  return crypto.createHash('sha256').update(key).digest();
-}
-
-const IV_LENGTH = 16;
-
-function encrypt(text: string): string {
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv('aes-256-cbc', getEncryptionKey(), iv);
-  let encrypted = cipher.update(text);
-  encrypted = Buffer.concat([encrypted, cipher.final()]);
-  return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
-}
-
-function decrypt(text: string): string {
-  const [ivHex, encryptedHex] = text.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const encrypted = Buffer.from(encryptedHex, 'hex');
-  const decipher = crypto.createDecipheriv('aes-256-cbc', getEncryptionKey(), iv);
-  let decrypted = decipher.update(encrypted);
-  decrypted = Buffer.concat([decrypted, decipher.final()]);
-  return decrypted.toString();
-}
 
 // Updated validation schema to include new fields
 const deployRequestSchema = z.object({
@@ -93,29 +68,54 @@ export async function POST(req: Request) {
     const encryptedFirecrawlKey = encrypt(data.metadata.firecrawlApiKey);
     console.log('Encrypted Firecrawl key:', encryptedFirecrawlKey);
     
-    // Prepare data for storage
+    // Prepare initial data for storage
     const now = new Date().toISOString();
-    const storageData = {
-      ...data,
+    const initialData = {
+      data: {},  // Empty data initially
       metadata: {
-        ...data.metadata,
+        query: data.metadata.query,
+        schema: data.metadata.schema,
+        sources: data.metadata.sources,
+        updateFrequency: data.metadata.updateFrequency,
         firecrawlApiKey: encryptedFirecrawlKey,
         apiKey: apiKey,
         lastUpdated: now,
         createdAt: now,
         lastUpdateAttempt: null,
         lastSuccessfulUpdate: null,
-        updateStatus: 'pending'
+        updateStatus: 'initializing'
       }
     };
-    console.log('Data to be stored:', JSON.stringify(storageData, null, 2));
 
-    // Store the data in Redis
-    await redis.set(`api/results/${cleanRoute}`, JSON.stringify(storageData));
+    // Store initial data
+    await redis.set(`api/results/${cleanRoute}`, JSON.stringify(initialData));
     
-    // Verify storage
-    const storedData = await redis.get(`api/results/${cleanRoute}`);
-    console.log('Verification - data stored in Redis:', storedData);
+    // Perform initial extraction
+    console.log('Starting initial extraction with:', {
+      endpoint: cleanRoute,
+      query: data.metadata.query,
+      schema: data.metadata.schema,
+      sources: data.metadata.sources
+    });
+    
+    const extractionResult = await extractAndUpdateData(
+      cleanRoute,
+      data.metadata.query,
+      data.metadata.schema,
+      data.metadata.sources,
+      data.metadata.firecrawlApiKey
+    );
+
+    console.log('Extraction result:', extractionResult);
+
+    if (!extractionResult.success) {
+      console.error('Initial extraction failed:', extractionResult.error);
+    } else {
+      // Schedule updates only if initial extraction succeeded
+      console.log('Initial extraction succeeded, scheduling updates');
+      const scheduled = await scheduleEndpoint(cleanRoute);
+      console.log(`Scheduling status for ${cleanRoute}:`, scheduled ? 'success' : 'failed');
+    }
 
     const apiRoute = process.env.API_ROUTE || 'http://localhost:3000';
     const fullUrl = `${apiRoute}/api/results/${cleanRoute}`;
@@ -126,6 +126,9 @@ export async function POST(req: Request) {
       route: cleanRoute,
       url: fullUrl,
       apiKey: apiKey,
+      extractionStatus: extractionResult.success ? 'success' : 'failed',
+      extractionError: extractionResult.error,
+      updateScheduled: extractionResult.success,
       curlCommand: `curl -X GET "${fullUrl}" \\\n  -H "Authorization: Bearer ${apiKey}" \\\n  -H "Content-Type: application/json"`
     });
   } catch (error) {
